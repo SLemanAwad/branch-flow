@@ -1,0 +1,32 @@
+{
+  "repo": "your-org/your-repo",
+  "clone": "C:/code/your-repo",
+  "remote": "origin",
+
+  "trunks": [
+    { "branch": "main", "note": "releases", "releases": true },
+    { "branch": "production", "note": "feature merges" },
+    { "branch": "integration", "lane": "dev4" }
+  ],
+  "base": "production",
+
+  "flows": [
+    { "from": "production", "to": "main", "hint": "merge production into main", "list_branches": true },
+    { "from": "main", "to": "production", "hint": "merge main into production" },
+    { "from": "main", "to": "integration", "hint": "merge main into integration" }
+  ],
+
+  "people": [
+    { "id": "dev1", "name": "Dev1", "note": "backend", "match": ["dev1-github-login", "Dev One"] },
+    { "id": "dev2", "name": "Dev2", "note": "frontend", "match": ["dev2-github-login"] },
+    { "id": "dev3", "name": "Dev3", "note": "data", "match": ["dev3-github-login"] },
+    { "id": "dev4", "name": "Dev4", "note": "fork PRs into integration", "match": ["dev4-github-login"] }
+  ],
+
+  "release_pattern": "^Release\\b",
+  "ignore_pattern": "^Bump version\\b",
+  "window_days": 75,
+  "stale_days": 7,
+  "abandoned_days": 30,
+  "port": 8765
+}

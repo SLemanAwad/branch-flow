@@ -1,0 +1,641 @@
+<!doctype html>
+﻿<title>Branch Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: summary strip of flow checks, one wide swimlane timeline (trunks on top, people below), then open-branch table, waiting list and activity. */
+:root {
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --ink: #18202c;
+  --muted: #5d6878;
+  --line: #dde2ea;
+  --lane-alt: #f7f9fb;
+  --code-bg: #eef1f5;
+  --t1: #1f8a5b; --t2: #2f62d0; --t3: #6b7280; --t4: #a16207;
+  --p1: #d0661b; --p2: #8a4fd6; --p3: #0f8f9a; --p4: #c2410c; --p5: #be185d; --p6: #4d7c0f; --p7: #1d4ed8; --p8: #7c3aed;
+  --ok: #1f8a5b; --warn: #b7791f; --bad: #c53b3b; --info: #5d6878;
+  --warn-bg: #fdf3e1; --bad-bg: #fbe9e9; --ok-bg: #e5f4ec; --info-bg: #edf0f4;
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --panel: #181e27; --ink: #e6eaf0; --muted: #98a3b3; --line: #2a3340; --lane-alt: #1b222c; --code-bg: #0f141b;
+    --t1: #3cc488; --t2: #6b95f2; --t3: #9ca3af; --t4: #e0a63a;
+    --p1: #f08c43; --p2: #b28af0; --p3: #34c2cc; --p4: #fb8a5c; --p5: #f472b6; --p6: #a3d15c; --p7: #7aa2ff; --p8: #b794f6;
+    --ok: #3cc488; --warn: #e2a945; --bad: #ef6b6b; --info: #98a3b3;
+    --warn-bg: #3a2f17; --bad-bg: #3d1f22; --ok-bg: #163126; --info-bg: #222a35;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --panel: #181e27; --ink: #e6eaf0; --muted: #98a3b3; --line: #2a3340; --lane-alt: #1b222c; --code-bg: #0f141b;
+  --t1: #3cc488; --t2: #6b95f2; --t3: #9ca3af; --t4: #e0a63a;
+  --p1: #f08c43; --p2: #b28af0; --p3: #34c2cc; --p4: #fb8a5c; --p5: #f472b6; --p6: #a3d15c; --p7: #7aa2ff; --p8: #b794f6;
+  --ok: #3cc488; --warn: #e2a945; --bad: #ef6b6b; --info: #98a3b3;
+  --warn-bg: #3a2f17; --bad-bg: #3d1f22; --ok-bg: #163126; --info-bg: #222a35;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1480px; margin: 0 auto; padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 span { font-family: var(--font-mono); font-weight: 400; font-size: 13px; color: var(--muted); margin-left: 8px; }
+.meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+
+.checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.check { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; border-left: 4px solid var(--ok); }
+.check.warn { border-left-color: var(--warn); }
+.check.bad { border-left-color: var(--bad); }
+.check .k { font-size: 12px; color: var(--muted); }
+.check .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.check .s { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+.graph-head { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { font: inherit; font-size: 12px; background: transparent; color: var(--ink); border: 0; padding: 5px 10px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+button:focus-visible, .toggle input:focus-visible, .rowlink:focus-visible, svg#g .item:focus-visible { outline: 2px solid var(--t2); outline-offset: 2px; }
+.toggle { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); padding: 0 14px 10px; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.lg-open { width: 22px; height: 6px; border-radius: 3px; background: var(--p1); }
+.lg-merged { width: 22px; height: 6px; border-radius: 3px; background: var(--p1); opacity: 0.4; }
+.lg-stale { width: 22px; height: 6px; border-radius: 3px; border: 1.5px dashed var(--bad); }
+.lg-empty { width: 22px; height: 6px; border-radius: 3px; border: 1.5px dotted var(--info); }
+.lg-wait { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--warn); }
+.lg-rel { width: 8px; height: 8px; transform: rotate(45deg); background: var(--t1); }
+.scroller { overflow-x: auto; border-top: 1px solid var(--line); }
+svg#g { display: block; font-family: var(--font-mono); }
+svg#g text { fill: var(--ink); }
+svg#g .lane-label { font-family: var(--font-ui); font-size: 13px; font-weight: 600; }
+svg#g .lane-sub { font-family: var(--font-ui); font-size: 11px; fill: var(--muted); }
+svg#g .tick { font-size: 10px; fill: var(--muted); }
+svg#g .blabel { font-size: 10.5px; pointer-events: none; }
+svg#g .item { cursor: pointer; }
+svg#g.has-sel .item:not(.sel), svg#g.has-sel .conn:not(.sel) { opacity: 0.18; }
+@keyframes pulse { 0% { r: 4; opacity: 0.9; } 100% { r: 10; opacity: 0; } }
+svg#g .pulse { animation: pulse 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { svg#g .pulse { animation: none; opacity: 0; } }
+.tip { position: fixed; z-index: 5; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 12px;
+  padding: 6px 8px; border-radius: 6px; max-width: 320px; }
+.detail { padding: 12px 14px; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 18px; }
+.detail .full { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; min-width: 0; }
+.detail .full b { font-family: var(--font-mono); font-size: 14px; overflow-wrap: anywhere; }
+.detail .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.detail .v { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.detail a { color: var(--t2); }
+.cmds { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cmds-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cmds pre { margin: 0; padding: 10px 12px; background: var(--code-bg); border-radius: 7px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+.cmds pre .c { color: var(--muted); }
+.copy { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); cursor: pointer; }
+
+.chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.chip.open { background: var(--ok-bg); color: var(--ok); }
+.chip.stale { background: var(--bad-bg); color: var(--bad); }
+.chip.wait { background: var(--warn-bg); color: var(--warn); }
+.chip.empty { background: var(--info-bg); color: var(--info); }
+.chip.done { background: var(--lane-alt); color: var(--muted); }
+.who { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.who i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.sec { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
+td.mono { overflow-wrap: anywhere; }
+tr:last-child td { border-bottom: 0; }
+th.num, td.num { text-align: right; }
+.rowlink { cursor: pointer; }
+.rowlink:hover td { background: var(--lane-alt); }
+.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.feed li { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.feed li:last-child { border-bottom: 0; }
+.feed time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.empty-note { color: var(--muted); font-size: 13px; }
+details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details .tbl-wrap { margin-top: 8px; }
+footer { color: var(--muted); font-size: 12px; text-align: center; }
+footer a { color: inherit; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Branch Flow <span id="repo"></span></h1>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="checks" id="checks" aria-label="Flow checks"></section>
+
+  <section class="panel" aria-label="Branch timeline">
+    <div class="graph-head">
+      <h2>Timeline</h2>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Person" id="people"></div>
+        <div class="seg" role="group" aria-label="Time range">
+          <button type="button" id="r14" data-days="14">14 days</button>
+          <button type="button" id="r30" data-days="30">30 days</button>
+          <button type="button" id="rAll" data-days="0">All</button>
+        </div>
+        <label class="toggle"><input type="checkbox" id="onlyOpen"> Open only</label>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="lg-open"></i>open</span>
+      <span><i class="lg-merged"></i>merged</span>
+      <span><i class="lg-stale"></i>idle 7+ days</span>
+      <span><i class="lg-empty"></i>no commits yet</span>
+      <span><i class="lg-wait"></i>not yet promoted</span>
+      <span id="lgRel"><i class="lg-rel"></i>release</span>
+    </div>
+    <div class="scroller" id="scroller"><svg id="g" role="img" aria-label="Swimlane timeline of branches per person and their merges into the trunk branches"></svg></div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <section class="panel sec" aria-label="Open branches">
+    <h2>Open branches</h2>
+    <div class="tbl-wrap"><table id="openTbl"></table></div>
+  </section>
+
+  <div class="cols">
+    <section class="panel sec" aria-label="Waiting">
+      <h2 id="waitTitle">Merged, not yet promoted</h2>
+      <div class="tbl-wrap"><table id="waitTbl"></table></div>
+      <h2 style="margin-top:8px">Latest merges</h2>
+      <ul class="feed" id="merges"></ul>
+    </section>
+    <section class="panel sec" aria-label="Activity">
+      <h2>Changes seen by the monitor</h2>
+      <ul class="feed" id="feed"></ul>
+    </section>
+  </div>
+
+  <section class="panel sec">
+    <details>
+      <summary id="oldSum">Old unmerged branches</summary>
+      <div class="tbl-wrap"><table id="oldTbl"></table></div>
+    </details>
+  </section>
+  <footer>Branch Flow · read-only view of git + GitHub · <a href="https://github.com/SLemanAwad/branch-flow" target="_blank" rel="noopener">source</a></footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = {"version":2,"generated":"2026-10-21T17:30:00Z","repo":"acme/shop-api","remote":"origin","config":{"trunks":[{"branch":"main","note":"releases","releases":true},{"branch":"production","note":"feature merges"},{"branch":"integration","lane":"dev4"}],"people":[{"id":"dev1","name":"Dev1","note":"backend"},{"id":"dev2","name":"Dev2","note":"frontend"},{"id":"dev3","name":"Dev3","note":"data"},{"id":"dev4","name":"Dev4","note":"fork PRs into integration"}],"base":"production","flows":[{"from":"production","to":"main","hint":"merge production into main","list_branches":true},{"from":"main","to":"production","hint":"merge main into production"},{"from":"main","to":"integration","hint":"merge main into integration"}],"window_days":75,"stale_days":7,"abandoned_days":30},"trunks":{"main":{"tip":"e25a7605","date":"2026-10-21T17:30:00Z","events":[{"kind":"release","date":"2026-10-15T15:30:00Z","sha":"5bd86d40","version":"2.5.1","author":"Lead","subject":"Release 2.5.1"},{"kind":"release","date":"2026-10-11T15:30:00Z","sha":"b4d66a3a","version":"2.5.0","author":"Lead","subject":"Release 2.5.0"},{"kind":"release","date":"2026-10-04T15:30:00Z","sha":"dd2e1609","version":"2.4.3","author":"Lead","subject":"Release 2.4.3"},{"kind":"release","date":"2026-09-26T15:30:00Z","sha":"230d977e","version":"2.4.2","author":"Lead","subject":"Release 2.4.2"},{"kind":"release","date":"2026-09-19T15:30:00Z","sha":"8ca81811","version":"2.4.1","author":"Lead","subject":"Release 2.4.1"},{"kind":"release","date":"2026-09-11T15:30:00Z","sha":"2a96fb1a","version":"2.4.0","author":"Lead","subject":"Release 2.4.0"},{"kind":"release","date":"2026-09-04T15:30:00Z","sha":"df1582b0","version":"2.3.3","author":"Lead","subject":"Release 2.3.3"},{"kind":"release","date":"2026-08-28T15:30:00Z","sha":"65dc9f50","version":"2.3.2","author":"Lead","subject":"Release 2.3.2"},{"kind":"release","date":"2026-08-20T15:30:00Z","sha":"211c70cf","version":"2.3.1","author":"Lead","subject":"Release 2.3.1"},{"kind":"release","date":"2026-08-13T15:30:00Z","sha":"37dc76fb","version":"2.3.0","author":"Lead","subject":"Release 2.3.0"}]},"production":{"tip":"616499c9","date":"2026-10-21T17:30:00Z","events":[{"kind":"merge","date":"2026-10-19T22:18:00Z","sha":"1a61dbe2","src":"branch_8","pr":null,"author":"Lead","subject":"Merge branch 'branch_8' into production","missing":["main"]},{"kind":"merge","date":"2026-10-15T17:30:00Z","sha":"cc011cdd","src":"branch_21","pr":null,"author":"Lead","subject":"Merge branch 'branch_21' into production","missing":[]},{"kind":"merge","date":"2026-10-15T16:30:00Z","sha":"aec6f024","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-10-11T16:30:00Z","sha":"6a50df4d","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-10-10T10:22:56.302550Z","sha":"92276658","src":"branch_7","pr":null,"author":"Lead","subject":"Merge branch 'branch_7' into production","missing":[]},{"kind":"merge","date":"2026-10-09T02:30:59.398088Z","sha":"babced20","src":"branch_14","pr":null,"author":"Lead","subject":"Merge branch 'branch_14' into production","missing":[]},{"kind":"merge","date":"2026-10-04T16:30:00Z","sha":"8cdb305f","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-10-02T17:30:00Z","sha":"b1fee08f","src":"branch_20","pr":null,"author":"Lead","subject":"Merge branch 'branch_20' into production","missing":[]},{"kind":"merge","date":"2026-09-28T23:05:23.718027Z","sha":"dbc496cb","src":"branch_6","pr":null,"author":"Lead","subject":"Merge branch 'branch_6' into production","missing":[]},{"kind":"merge","date":"2026-09-26T16:30:00Z","sha":"d1bc52d9","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-09-26T15:04:46.400412Z","sha":"14f4733f","src":"branch_13","pr":null,"author":"Lead","subject":"Merge branch 'branch_13' into production","missing":[]},{"kind":"merge","date":"2026-09-24T11:13:30.263141Z","sha":"93bd04cf","src":"branch_5","pr":null,"author":"Lead","subject":"Merge branch 'branch_5' into production","missing":[]},{"kind":"merge","date":"2026-09-19T16:30:00Z","sha":"4720771f","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-09-18T17:30:00Z","sha":"c3baea9e","src":"branch_19","pr":null,"author":"Lead","subject":"Merge branch 'branch_19' into production","missing":[]},{"kind":"merge","date":"2026-09-16T08:18:46.677732Z","sha":"5c90a958","src":"branch_12","pr":null,"author":"Lead","subject":"Merge branch 'branch_12' into production","missing":[]},{"kind":"merge","date":"2026-09-12T20:43:20.117858Z","sha":"1fb17c23","src":"branch_4","pr":null,"author":"Lead","subject":"Merge branch 'branch_4' into production","missing":[]},{"kind":"merge","date":"2026-09-11T16:30:00Z","sha":"72fdf202","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-09-04T16:30:00Z","sha":"7f1b103c","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-09-02T19:40:50.369392Z","sha":"3d9c1724","src":"branch_3","pr":null,"author":"Lead","subject":"Merge branch 'branch_3' into production","missing":[]},{"kind":"merge","date":"2026-09-01T03:08:52.788415Z","sha":"6d76b07e","src":"branch_11","pr":null,"author":"Lead","subject":"Merge branch 'branch_11' into production","missing":[]},{"kind":"merge","date":"2026-08-31T17:30:00Z","sha":"6bf46c69","src":"branch_18","pr":null,"author":"Lead","subject":"Merge branch 'branch_18' into production","missing":[]},{"kind":"merge","date":"2026-08-28T16:30:00Z","sha":"6415479c","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-08-23T00:27:35.535503Z","sha":"81e74ef5","src":"branch_2","pr":null,"author":"Lead","subject":"Merge branch 'branch_2' into production","missing":[]},{"kind":"merge","date":"2026-08-20T16:30:00Z","sha":"bd0561e6","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]},{"kind":"merge","date":"2026-08-19T17:30:00Z","sha":"2a3af4d4","src":"branch_17","pr":null,"author":"Lead","subject":"Merge branch 'branch_17' into production","missing":[]},{"kind":"merge","date":"2026-08-19T06:57:11.850802Z","sha":"907a70c3","src":"branch_10","pr":null,"author":"Lead","subject":"Merge branch 'branch_10' into production","missing":[]},{"kind":"merge","date":"2026-08-16T23:36:43.692353Z","sha":"128b2f33","src":"branch_1","pr":null,"author":"Lead","subject":"Merge branch 'branch_1' into production","missing":[]},{"kind":"merge","date":"2026-08-13T16:30:00Z","sha":"c4aaeac1","src":"main","pr":null,"author":"Lead","subject":"Merge branch 'main' into production","missing":[]}]},"integration":{"tip":"f52ddf5d","date":"2026-10-21T17:30:00Z","events":[{"kind":"merge","date":"2026-10-14T13:33:58.759875Z","sha":"7e62aa0a","src":"branch_29","pr":7,"author":"Lead","subject":"Merge pull request #7 from dev4-gh/branch_29","missing":[]},{"kind":"merge","date":"2026-10-11T19:30:00Z","sha":"fc891b4a","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-10-06T06:34:58.873968Z","sha":"5affb229","src":"branch_28","pr":6,"author":"Lead","subject":"Merge pull request #6 from dev4-gh/branch_28","missing":[]},{"kind":"merge","date":"2026-10-04T19:30:00Z","sha":"47469a4d","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-09-28T15:53:53.282872Z","sha":"58d5563d","src":"branch_27","pr":5,"author":"Lead","subject":"Merge pull request #5 from dev4-gh/branch_27","missing":[]},{"kind":"merge","date":"2026-09-26T19:30:00Z","sha":"6e36aab0","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-09-19T19:30:00Z","sha":"e2257159","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-09-18T05:10:06.978340Z","sha":"48db40af","src":"branch_26","pr":4,"author":"Lead","subject":"Merge pull request #4 from dev4-gh/branch_26","missing":[]},{"kind":"merge","date":"2026-09-11T19:30:00Z","sha":"66d22876","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-09-06T15:10:17.821281Z","sha":"93f448b3","src":"branch_25","pr":3,"author":"Lead","subject":"Merge pull request #3 from dev4-gh/branch_25","missing":[]},{"kind":"merge","date":"2026-09-04T19:30:00Z","sha":"14a0f9e7","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-08-28T19:30:00Z","sha":"eab477d2","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-08-27T13:22:45.501106Z","sha":"bb2d420f","src":"branch_24","pr":2,"author":"Lead","subject":"Merge pull request #2 from dev4-gh/branch_24","missing":[]},{"kind":"merge","date":"2026-08-20T19:30:00Z","sha":"3f63af83","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]},{"kind":"merge","date":"2026-08-19T02:50:40.893235Z","sha":"b2715945","src":"branch_23","pr":1,"author":"Lead","subject":"Merge pull request #1 from dev4-gh/branch_23","missing":[]},{"kind":"merge","date":"2026-08-13T19:30:00Z","sha":"49952399","src":"main","pr":null,"author":"Lead","subject":"Merge main into integration","missing":[]}]}},"sync":[{"from":"production","to":"main","hint":"merge production into main","list_branches":true,"count":6,"commits":[]},{"from":"main","to":"production","hint":"merge main into production","count":0,"commits":[]},{"from":"main","to":"integration","hint":"merge main into integration","count":5,"commits":[]}],"branches":[{"name":"branch_1","lane":"dev1","tip":"f2a74de4","created":"2026-08-12T17:30:00Z","commits":7,"empty":false,"first_commit":"cache lookup results","last_commit":"handle empty filters","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-08-16T20:36:43.692353Z","merges":[{"into":"production","date":"2026-08-16T23:36:43.692353Z","sha":"128b2f33"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_2","lane":"dev1","tip":"1818e811","created":"2026-08-21T17:30:00Z","commits":10,"empty":false,"first_commit":"update chart colours","last_commit":"fix date parsing","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-08-22T21:27:35.535503Z","merges":[{"into":"production","date":"2026-08-23T00:27:35.535503Z","sha":"81e74ef5"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_3","lane":"dev1","tip":"099950d8","created":"2026-08-30T17:30:00Z","commits":5,"empty":false,"first_commit":"fix pagination on search","last_commit":"handle empty filters","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-09-02T16:40:50.369392Z","merges":[{"into":"production","date":"2026-09-02T19:40:50.369392Z","sha":"3d9c1724"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_4","lane":"dev1","tip":"8d116ece","created":"2026-09-07T17:30:00Z","commits":3,"empty":false,"first_commit":"handle empty filters","last_commit":"add export endpoint","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-09-12T17:43:20.117858Z","merges":[{"into":"production","date":"2026-09-12T20:43:20.117858Z","sha":"1fb17c23"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_5","lane":"dev1","tip":"a170b338","created":"2026-09-18T17:30:00Z","commits":5,"empty":false,"first_commit":"add retry on timeout","last_commit":"fix date parsing","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-09-24T08:13:30.263141Z","merges":[{"into":"production","date":"2026-09-24T11:13:30.263141Z","sha":"93bd04cf"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_6","lane":"dev1","tip":"658cda14","created":"2026-09-27T17:30:00Z","commits":11,"empty":false,"first_commit":"add export endpoint","last_commit":"validate upload size","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-09-28T20:05:23.718027Z","merges":[{"into":"production","date":"2026-09-28T23:05:23.718027Z","sha":"dbc496cb"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_7","lane":"dev1","tip":"4a23d596","created":"2026-10-06T17:30:00Z","commits":4,"empty":false,"first_commit":"handle empty filters","last_commit":"cache lookup results","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-10-10T07:22:56.302550Z","merges":[{"into":"production","date":"2026-10-10T10:22:56.302550Z","sha":"92276658"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_8","lane":"dev1","tip":"8f6d0558","created":"2026-10-17T17:30:00Z","commits":6,"empty":false,"first_commit":"add retry on timeout","last_commit":"cache lookup results","pr":null,"creator":"dev1-gh","status":"merged","last":"2026-10-19T19:18:00Z","merges":[{"into":"production","date":"2026-10-19T22:18:00Z","sha":"1a61dbe2"}],"in":{"production":true,"main":false,"integration":false}},{"name":"branch_9","lane":"dev1","tip":"94e3bf91","created":"2026-10-18T17:30:00Z","commits":6,"empty":false,"first_commit":"fix date parsing","last_commit":"add retry on timeout","pr":null,"creator":"dev1-gh","status":"open","last":"2026-10-21T15:30:00Z","merges":[],"behind_base":4,"idle_days":0,"stale":false,"in":{"production":false,"main":false,"integration":false}},{"name":"branch_10","lane":"dev2","tip":"5f557203","created":"2026-08-14T17:30:00Z","commits":5,"empty":false,"first_commit":"fix pagination on search","last_commit":"speed up report query","pr":null,"creator":"dev2-gh","status":"merged","last":"2026-08-19T03:57:11.850802Z","merges":[{"into":"production","date":"2026-08-19T06:57:11.850802Z","sha":"907a70c3"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_11","lane":"dev2","tip":"9e7769b1","created":"2026-08-27T17:30:00Z","commits":2,"empty":false,"first_commit":"validate upload size","last_commit":"add audit log entry","pr":null,"creator":"dev2-gh","status":"merged","last":"2026-09-01T00:08:52.788415Z","merges":[{"into":"production","date":"2026-09-01T03:08:52.788415Z","sha":"6d76b07e"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_12","lane":"dev2","tip":"506bf2ef","created":"2026-09-10T17:30:00Z","commits":14,"empty":false,"first_commit":"add audit log entry","last_commit":"fix date parsing","pr":null,"creator":"dev2-gh","status":"merged","last":"2026-09-16T05:18:46.677732Z","merges":[{"into":"production","date":"2026-09-16T08:18:46.677732Z","sha":"5c90a958"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_13","lane":"dev2","tip":"3f98e277","created":"2026-09-21T17:30:00Z","commits":6,"empty":false,"first_commit":"cache lookup results","last_commit":"tidy settings page","pr":null,"creator":"dev2-gh","status":"merged","last":"2026-09-26T12:04:46.400412Z","merges":[{"into":"production","date":"2026-09-26T15:04:46.400412Z","sha":"14f4733f"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_14","lane":"dev2","tip":"4cdd2055","created":"2026-10-03T17:30:00Z","commits":11,"empty":false,"first_commit":"speed up report query","last_commit":"add audit log entry","pr":null,"creator":"dev2-gh","status":"merged","last":"2026-10-08T23:30:59.398088Z","merges":[{"into":"production","date":"2026-10-09T02:30:59.398088Z","sha":"babced20"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_15","lane":"dev2","tip":"72e6cc3a","created":"2026-09-25T17:30:00Z","commits":11,"empty":false,"first_commit":"refactor auth middleware","last_commit":"fix date parsing","pr":null,"creator":"dev2-gh","status":"open","last":"2026-10-02T15:30:00Z","merges":[],"behind_base":63,"idle_days":19,"stale":true,"in":{"production":false,"main":false,"integration":false}},{"name":"branch_16","lane":"dev2","tip":"faecbd38","created":"2026-10-19T17:30:00Z","commits":0,"empty":true,"first_commit":"","last_commit":"","pr":null,"creator":"dev2-gh","status":"open","last":"2026-10-19T15:30:00Z","merges":[],"behind_base":0,"idle_days":2,"stale":false,"in":{"production":false,"main":false,"integration":false}},{"name":"branch_17","lane":"dev3","tip":"1e398f10","created":"2026-08-10T17:30:00Z","commits":3,"empty":false,"first_commit":"speed up report query","last_commit":"handle empty filters","pr":null,"creator":"dev3-gh","status":"merged","last":"2026-08-19T14:30:00Z","merges":[{"into":"production","date":"2026-08-19T17:30:00Z","sha":"2a3af4d4"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_18","lane":"dev3","tip":"5790f82e","created":"2026-08-24T17:30:00Z","commits":14,"empty":false,"first_commit":"cache lookup results","last_commit":"add audit log entry","pr":null,"creator":"dev3-gh","status":"merged","last":"2026-08-31T14:30:00Z","merges":[{"into":"production","date":"2026-08-31T17:30:00Z","sha":"6bf46c69"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_19","lane":"dev3","tip":"f646e1f4","created":"2026-09-06T17:30:00Z","commits":2,"empty":false,"first_commit":"add retry on timeout","last_commit":"fix pagination on search","pr":null,"creator":"dev3-gh","status":"merged","last":"2026-09-18T14:30:00Z","merges":[{"into":"production","date":"2026-09-18T17:30:00Z","sha":"c3baea9e"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_20","lane":"dev3","tip":"92b1d3f2","created":"2026-09-24T17:30:00Z","commits":10,"empty":false,"first_commit":"update chart colours","last_commit":"update chart colours","pr":null,"creator":"dev3-gh","status":"merged","last":"2026-10-02T14:30:00Z","merges":[{"into":"production","date":"2026-10-02T17:30:00Z","sha":"b1fee08f"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_21","lane":"dev3","tip":"98289fcd","created":"2026-10-09T17:30:00Z","commits":7,"empty":false,"first_commit":"add audit log entry","last_commit":"fix date parsing","pr":null,"creator":"dev3-gh","status":"merged","last":"2026-10-15T14:30:00Z","merges":[{"into":"production","date":"2026-10-15T17:30:00Z","sha":"cc011cdd"}],"in":{"production":true,"main":true,"integration":true}},{"name":"branch_22","lane":"dev3","tip":"74c9df6a","created":"2026-10-16T17:30:00Z","commits":9,"empty":false,"first_commit":"fix pagination on search","last_commit":"fix pagination on search","pr":null,"creator":"dev3-gh","status":"open","last":"2026-10-20T15:30:00Z","merges":[],"behind_base":7,"idle_days":1,"stale":false,"in":{"production":false,"main":false,"integration":false}}],"fork_prs":[{"name":"branch_23","lane":"dev4","number":1,"title":"PR1: add audit log entry","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-08-16T17:30:00Z","merged":"2026-08-19T02:50:40.893235Z","closed":"2026-08-19T02:50:40.893235Z","updated":"2026-08-19T02:50:40.893235Z","url":"https://github.com/acme/shop-api/pull/1","author":"dev4-gh"},{"name":"branch_24","lane":"dev4","number":2,"title":"PR2: add export endpoint","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-08-25T17:30:00Z","merged":"2026-08-27T13:22:45.501106Z","closed":"2026-08-27T13:22:45.501106Z","updated":"2026-08-27T13:22:45.501106Z","url":"https://github.com/acme/shop-api/pull/2","author":"dev4-gh"},{"name":"branch_25","lane":"dev4","number":3,"title":"PR3: add retry on timeout","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-09-04T17:30:00Z","merged":"2026-09-06T15:10:17.821281Z","closed":"2026-09-06T15:10:17.821281Z","updated":"2026-09-06T15:10:17.821281Z","url":"https://github.com/acme/shop-api/pull/3","author":"dev4-gh"},{"name":"branch_26","lane":"dev4","number":4,"title":"PR4: add audit log entry","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-09-15T17:30:00Z","merged":"2026-09-18T05:10:06.978340Z","closed":"2026-09-18T05:10:06.978340Z","updated":"2026-09-18T05:10:06.978340Z","url":"https://github.com/acme/shop-api/pull/4","author":"dev4-gh"},{"name":"branch_27","lane":"dev4","number":5,"title":"PR5: add retry on timeout","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-09-26T17:30:00Z","merged":"2026-09-28T15:53:53.282872Z","closed":"2026-09-28T15:53:53.282872Z","updated":"2026-09-28T15:53:53.282872Z","url":"https://github.com/acme/shop-api/pull/5","author":"dev4-gh"},{"name":"branch_28","lane":"dev4","number":6,"title":"PR6: add audit log entry","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-10-05T17:30:00Z","merged":"2026-10-06T06:34:58.873968Z","closed":"2026-10-06T06:34:58.873968Z","updated":"2026-10-06T06:34:58.873968Z","url":"https://github.com/acme/shop-api/pull/6","author":"dev4-gh"},{"name":"branch_29","lane":"dev4","number":7,"title":"PR7: fix pagination on search","base":"integration","state":"MERGED","draft":false,"review":"APPROVED","created":"2026-10-13T17:30:00Z","merged":"2026-10-14T13:33:58.759875Z","closed":"2026-10-14T13:33:58.759875Z","updated":"2026-10-14T13:33:58.759875Z","url":"https://github.com/acme/shop-api/pull/7","author":"dev4-gh"},{"name":"branch_30","lane":"dev4","number":8,"title":"PR8: add export endpoint","base":"integration","state":"OPEN","draft":true,"review":"REVIEW_REQUIRED","created":"2026-10-20T12:30:00Z","merged":null,"closed":null,"updated":"2026-10-21T11:30:00Z","url":"https://github.com/acme/shop-api/pull/8","author":"dev4-gh"}],"stale_unmerged":[{"name":"branch_old_1","last":"2026-09-10T17:30:00Z","lane":"dev2","age_days":41},{"name":"branch_old_2","last":"2026-08-24T17:30:00Z","lane":"dev1","age_days":58},{"name":"branch_old_3","last":"2026-07-17T17:30:00Z","lane":"dev3","age_days":96},{"name":"branch_old_4","last":"2026-06-10T17:30:00Z","lane":"dev2","age_days":133}],"history":[{"at":"2026-10-21T16:30:00Z","kind":"pr","branch":"","lane":"dev4","text":"New PR #8 branch_30 -> integration (Dev4), open"},{"at":"2026-10-21T16:30:00Z","kind":"new","branch":"","lane":"dev2","text":"New branch branch_16 (Dev2), no commits yet"},{"at":"2026-10-20T13:30:00Z","kind":"merged","branch":"","lane":"dev1","text":"branch_8 (Dev1) merged into production"},{"at":"2026-10-20T13:30:00Z","kind":"sync","branch":"","lane":"","text":"production has 6 commits not in main"},{"at":"2026-10-16T15:30:00Z","kind":"sync","branch":"","lane":"","text":"main has 5 commits not in integration"},{"at":"2026-10-15T15:30:00Z","kind":"trunk","branch":"","lane":"main","text":"Release 2.5.1 on main"},{"at":"2026-10-09T14:30:00Z","kind":"stale","branch":"","lane":"dev2","text":"branch_15 (Dev2) open with no activity for 7 days"}]};
+(function () {
+  if (!DATA) { document.getElementById("meta").textContent = "No data yet. Run collect.py."; return; }
+  const C = DATA.config;
+  const NOW = new Date(DATA.generated);
+  const DAY = 864e5;
+  const BASE = C.base;
+
+  // ---------- lanes + colours ----------
+  const COLOR = {}, NAME = {};
+  const trunkLanes = C.trunks.filter(t => !t.lane);
+  trunkLanes.forEach((t, i) => { COLOR[t.branch] = `var(--t${(i % 4) + 1})`; });
+  C.people.forEach((p, i) => { COLOR[p.id] = p.id === "_other" ? "var(--t3)" : `var(--p${(i % 8) + 1})`; NAME[p.id] = p.name; });
+  C.trunks.filter(t => t.lane).forEach(t => { COLOR[t.branch] = COLOR[t.lane] || "var(--t3)"; });
+  const LANES = [
+    ...trunkLanes.map(t => ({ id: t.branch, label: t.branch, sub: t.note || "", trunk: true })),
+    ...C.people.map(p => ({ id: p.id, label: p.name, sub: p.note || "",
+      trunkLines: C.trunks.filter(t => t.lane === p.id).map(t => t.branch) })),
+  ];
+  const releaseTrunk = (C.trunks.find(t => t.releases) || {}).branch;
+  if (!releaseTrunk) document.getElementById("lgRel").hidden = true;
+
+  // ---------- normalise ----------
+  const items = [];
+  for (const b of DATA.branches) {
+    const m = b.merges[0];
+    items.push({
+      id: "b:" + b.name, kind: "branch", name: b.name, lane: b.lane,
+      start: new Date(b.created), end: m ? new Date(m.date) : null, last: new Date(b.last),
+      status: b.status, into: m ? m.into : null, empty: b.empty, idle: b.idle_days,
+      stale: !!b.stale && !b.empty, inT: b.in, commits: b.commits, behind: b.behind_base,
+      lastCommit: b.last_commit, tip: b.tip, creator: b.creator,
+      url: b.pr ? b.pr.url : "https://github.com/" + DATA.repo + "/tree/" + encodeURIComponent(b.name),
+      pr: b.pr ? b.pr.number : null, prInfo: b.pr,
+    });
+  }
+  for (const p of DATA.fork_prs) {
+    const end = p.merged || p.closed, open = p.state === "OPEN";
+    const idle = Math.floor((NOW - new Date(p.updated)) / DAY);
+    items.push({
+      id: "p:" + p.number, kind: "pr", name: p.name, lane: NAME[p.lane] ? p.lane : "_other",
+      start: new Date(p.created), end: end ? new Date(end) : null, last: new Date(p.updated),
+      status: p.state === "MERGED" ? "merged" : open ? "open" : "closed", into: p.base,
+      stale: open && idle >= C.stale_days, idle, empty: false, inT: {}, pr: p.number, title: p.title,
+      url: p.url, author: p.author, prInfo: p,
+    });
+  }
+  // waiting: merged into a flow's source trunk but not yet in its target
+  const waitFlows = C.flows.filter(f => f.list_branches);
+  for (const it of items) {
+    if (it.kind !== "branch" || it.status !== "merged") continue;
+    const f = waitFlows.find(f => it.inT[f.from] && !it.inT[f.to]);
+    if (f) it.waiting = f;
+  }
+  const byName = new Map(items.map(i => [i.name, i]));
+  const srcColor = src => COLOR[src] || (byName.has(src) ? COLOR[byName.get(src).lane] : "var(--muted)");
+
+  // ---------- helpers ----------
+  const fmtD = d => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const fmtDT = d => d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const ago = days => days === 0 ? "today" : days === 1 ? "1 day ago" : days + " days ago";
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent, text) {
+    const e = tag.startsWith("svg:") ? document.createElementNS(SVGNS, tag.slice(4)) : document.createElement(tag);
+    for (const k in attrs || {}) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  const S = (tag, attrs, parent, text) => el("svg:" + tag, attrs, parent, text);
+  const who = (lane, parent) => { const s = el("span", { class: "who" }, parent); el("i", { style: "background:" + COLOR[lane] }, s); s.append(NAME[lane] || lane); return s; };
+
+  let person = "all", rangeDays = 30, onlyOpen = false, selected = null;
+  try { const r = localStorage.getItem("bf-range"); if (["14", "30", "0"].includes(r)) rangeDays = +r; } catch (e) {}
+  const mine = it => person === "all" || it.lane === person;
+
+  // ---------- header + checks ----------
+  document.getElementById("repo").textContent = DATA.repo;
+  document.getElementById("meta").textContent = "Updated " + fmtDT(NOW);
+
+  function renderChecks() {
+    const open = items.filter(i => i.status === "open" && mine(i));
+    const idle = open.filter(i => i.stale), empty = open.filter(i => i.empty);
+    const names = l => l.slice(0, 3).map(i => i.name).join(", ") + (l.length > 3 ? "…" : "");
+    const checks = [
+      { k: "Open branches", v: open.length, cls: "",
+        s: person === "all" ? C.people.map(p => p.name + " " + open.filter(i => i.lane === p.id).length).join(" · ") : NAME[person] },
+      { k: "Idle " + C.stale_days + "+ days, with work", v: idle.length, cls: idle.length ? "bad" : "", s: idle.length ? names(idle) : "none" },
+      { k: "Pushed, no commits yet", v: empty.length, cls: empty.length ? "warn" : "", s: empty.length ? names(empty) : "none" },
+    ];
+    for (const f of DATA.sync) {
+      checks.push({ k: f.from + " not in " + f.to, v: f.count, cls: f.count ? "warn" : "",
+        s: f.count ? (f.hint || "commits waiting") : "in sync" });
+    }
+    for (const f of waitFlows) {
+      const w = items.filter(i => i.waiting === f && mine(i));
+      checks.push({ k: "Merged to " + f.from + ", not in " + f.to, v: w.length, cls: w.length ? "warn" : "", s: w.length ? names(w) : "nothing waiting" });
+    }
+    const ch = document.getElementById("checks"); ch.replaceChildren();
+    for (const c of checks) {
+      const d = el("div", { class: "panel check " + c.cls }, ch);
+      el("div", { class: "k" }, d, c.k); el("div", { class: "v" }, d, String(c.v)); el("div", { class: "s" }, d, c.s);
+    }
+  }
+
+  // ---------- person filter ----------
+  const peopleSeg = document.getElementById("people");
+  const withItems = C.people.filter(p => items.some(i => i.lane === p.id));
+  for (const p of [{ id: "all", name: "Everyone" }, ...withItems]) {
+    const b = el("button", { type: "button", "data-p": p.id }, peopleSeg);
+    if (p.id !== "all") el("i", { style: "background:" + COLOR[p.id] }, b);
+    b.append(p.name);
+    b.addEventListener("click", () => { person = p.id; selected = null; renderAll(); });
+  }
+
+  // ---------- graph ----------
+  const svg = document.getElementById("g");
+  const scroller = document.getElementById("scroller");
+  const tip = document.getElementById("tip");
+
+  function pack(list, x, charW) {
+    const rows = [];
+    list.sort((a, b) => a.start - b.start);
+    for (const it of list) {
+      const x0 = x(Math.max(it.start, x.t0)), x1 = x(it.end || NOW);
+      const occ = Math.max(x1, x0 + (it.name.length + (it.pr ? 5 : 0)) * charW + 10) + 8;
+      let r = rows.findIndex(end => end <= x0);
+      if (r < 0) { r = rows.length; rows.push(0); }
+      rows[r] = occ; it._row = r; it._x0 = x0; it._x1 = x1;
+    }
+    return rows.length;
+  }
+
+  function render() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const W = Math.max(scroller.clientWidth, 760);
+    const labelW = W < 900 ? 108 : 140, padR = 18;
+    const span = rangeDays || C.window_days;
+    const t0 = new Date(NOW - span * DAY), t1 = new Date(+NOW + span * DAY * 0.03);
+    const plotW = W - labelW - padR;
+    const x = t => labelW + (t - t0) / (t1 - t0) * plotW;
+    x.t0 = t0;
+    const charW = 6.4, rowH = 26, trunkH = 54, axisH = 26;
+
+    const vis = items.filter(i => (i.end || NOW) >= t0 && (!onlyOpen || i.status === "open"));
+    const lanes = LANES.filter(l => l.trunk || person === "all" || l.id === person)
+      .filter(l => l.trunk || l.trunkLines.length || vis.some(i => i.lane === l.id) || person === l.id)
+      .map(l => {
+        if (l.trunk) return { ...l, h: trunkH };
+        const its = vis.filter(i => i.lane === l.id);
+        const top = 12 + l.trunkLines.length * 28;
+        const n = pack(its, x, charW);
+        return { ...l, its, top, h: Math.max(top + n * rowH + 10, 56) };
+      });
+    let y = axisH;
+    for (const l of lanes) { l.y = y; y += l.h; }
+    const H = y + 8;
+    svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+    const gBg = S("g", {}, svg), gGrid = S("g", {}, svg), gConn = S("g", {}, svg), gTr = S("g", {}, svg), gIt = S("g", {}, svg);
+    lanes.forEach((l, i) => {
+      S("rect", { x: 0, y: l.y, width: W, height: l.h, fill: i % 2 ? "var(--lane-alt)" : "var(--panel)" }, gBg);
+      S("rect", { x: 0, y: l.y, width: 4, height: l.h, fill: COLOR[l.id] }, gBg);
+      S("line", { x1: 0, x2: W, y1: l.y, y2: l.y, stroke: "var(--line)" }, gBg);
+      S("text", { x: 14, y: l.y + 20, class: "lane-label" }, gBg, l.label);
+      S("text", { x: 14, y: l.y + 35, class: "lane-sub" }, gBg, l.sub);
+      if (!l.trunk) S("text", { x: 14, y: l.y + 49, class: "lane-sub" }, gBg, l.its.filter(it => it.status === "open").length + " open");
+    });
+
+    const step = span <= 14 ? 2 : span <= 45 ? 7 : 14;
+    const first = new Date(t0); first.setHours(0, 0, 0, 0);
+    if (step >= 7) while (first.getDay() !== 1) first.setDate(first.getDate() + 1);
+    for (let d = new Date(first); d <= t1; d.setDate(d.getDate() + step)) {
+      const xx = x(d);
+      if (xx < labelW) continue;
+      S("line", { x1: xx, x2: xx, y1: axisH - 4, y2: H, stroke: "var(--line)", "stroke-dasharray": "2 4" }, gGrid);
+      S("text", { x: xx + 3, y: axisH - 9, class: "tick" }, gGrid, fmtD(d));
+    }
+    const xn = x(NOW);
+    S("line", { x1: xn, x2: xn, y1: axisH - 4, y2: H, stroke: "var(--bad)", "stroke-width": 1.2, opacity: 0.7 }, gGrid);
+    S("text", { x: xn - 3, y: axisH - 9, class: "tick", "text-anchor": "end", style: "fill:var(--bad)" }, gGrid, "now");
+
+    const trunkY = {};
+    for (const l of lanes) {
+      if (l.trunk) trunkY[l.id] = l.y + l.h / 2 + 4;
+      (l.trunkLines || []).forEach((t, k) => { trunkY[t] = l.y + 24 + k * 28; });
+    }
+    for (const [t, ty] of Object.entries(trunkY)) {
+      S("line", { x1: labelW, x2: xn, y1: ty, y2: ty, stroke: COLOR[t], "stroke-width": 3, "stroke-linecap": "round" }, gTr);
+      if (!LANES.some(l => l.trunk && l.id === t)) S("text", { x: labelW + 4, y: ty - 6, class: "tick", style: "fill:" + COLOR[t] }, gTr, t);
+    }
+    const nBadges = {};
+    const badge = (t, text, warn) => {
+      if (trunkY[t] == null) return;
+      const k = nBadges[t] = (nBadges[t] || 0) + 1;      // first above the line, second below it
+      S("text", { x: xn - 6, y: trunkY[t] + (k === 1 ? -8 : 16), class: "tick", "text-anchor": "end",
+        style: "font-weight:500;fill:" + (warn ? "var(--warn)" : "var(--muted)") }, gTr, text);
+    };
+    if (releaseTrunk) {
+      const lastRel = DATA.trunks[releaseTrunk].events.find(e => e.kind === "release");
+      if (lastRel) badge(releaseTrunk, "latest release " + lastRel.version, false);
+    }
+    for (const f of DATA.sync) if (f.count) badge(f.to, f.count + " behind " + f.from, true);
+
+    const evTip = (e, t) => e.kind === "release" ? "Release " + e.version + " · " + fmtDT(new Date(e.date))
+      : e.subject + " · " + fmtDT(new Date(e.date)) + (e.missing && e.missing.length ? " · not in " + e.missing.join(", ") + " yet" : "");
+    for (const [t, ty] of Object.entries(trunkY)) {
+      for (const e of DATA.trunks[t].events) {
+        const d = new Date(e.date); if (d < t0) continue;
+        const xx = x(d);
+        let m;
+        if (e.kind === "release") m = S("rect", { x: xx - 4, y: ty - 4, width: 8, height: 8, fill: COLOR[t], stroke: "var(--panel)", "stroke-width": 1.5, transform: `rotate(45 ${xx} ${ty})` }, gTr);
+        else {
+          const hollow = e.missing && e.missing.length;
+          m = S("circle", { cx: xx, cy: ty, r: 4.5, fill: hollow ? "var(--panel)" : srcColor(e.src), stroke: hollow ? "var(--warn)" : "var(--panel)", "stroke-width": hollow ? 2 : 1.5 }, gTr);
+          if (trunkY[e.src] != null && e.src !== t) {
+            S("path", { d: `M${xx},${trunkY[e.src]} L${xx},${ty}`, stroke: COLOR[e.src], "stroke-width": 1.2, "stroke-dasharray": "3 3", fill: "none", opacity: 0.6, class: "conn" }, gConn);
+          }
+        }
+        hover(m, () => evTip(e, t));
+      }
+    }
+
+    for (const l of lanes) {
+      if (l.trunk) continue;
+      for (const it of l.its) {
+        const by = l.y + l.top + it._row * rowH + 16;
+        const g = S("g", { class: "item" + (selected === it.id ? " sel" : ""), tabindex: 0, role: "button", "aria-label": it.name }, gIt);
+        const col = COLOR[it.lane];
+        const x0 = Math.max(it._x0, labelW), x1 = Math.max(it._x1, x0 + 4);
+        const done = it.status !== "open";
+        if (it.empty && !done) {
+          S("rect", { x: x0, y: by - 3, width: x1 - x0, height: 6, rx: 3, fill: "none", stroke: "var(--info)", "stroke-width": 1.4, "stroke-dasharray": "1.5 2.5" }, g);
+        } else {
+          S("rect", { x: x0, y: by - 3, width: x1 - x0, height: 6, rx: 3, fill: it.status === "closed" ? "var(--muted)" : col, opacity: done ? 0.42 : 0.95 }, g);
+        }
+        if (it.stale) S("rect", { x: x0 - 1.5, y: by - 4.5, width: x1 - x0 + 3, height: 9, rx: 4.5, fill: "none", stroke: "var(--bad)", "stroke-width": 1.4, "stroke-dasharray": "3 2" }, g);
+        if (it.start < t0) S("path", { d: `M${x0 + 1},${by} l6,-5 v10 z`, fill: "var(--panel)", opacity: 0.8 }, g);
+        S("text", { x: x0, y: by - 6, class: "blabel" }, g, it.name + (it.pr ? " #" + it.pr : ""));
+        S("rect", { x: x0, y: by - 18, width: Math.max(x1 - x0, it.name.length * charW), height: 24, fill: "transparent" }, g);
+        if (!done) {
+          const dot = it.stale ? "var(--bad)" : it.empty ? "var(--info)" : col;
+          S("circle", { cx: x1, cy: by, r: 4, fill: dot, class: "pulse" }, g);
+          S("circle", { cx: x1, cy: by, r: 4, fill: dot }, g);
+        } else if (it.status === "merged" && trunkY[it.into] != null) {
+          const ty = trunkY[it.into];
+          S("path", { d: `M${x1},${by} C${x1 + 10},${by} ${x1},${ty + (ty < by ? 14 : -14)} ${x1},${ty}`, stroke: col, "stroke-width": 1.3, fill: "none", opacity: 0.55, class: "conn" + (selected === it.id ? " sel" : "") }, gConn);
+          S("circle", { cx: x1, cy: by, r: 3, fill: col }, g);
+          if (it.waiting) S("circle", { cx: x1, cy: by, r: 5.5, fill: "none", stroke: "var(--warn)", "stroke-width": 2 }, g);
+        }
+        hover(g, () => it.name + " · " + statusText(it));
+        g.addEventListener("click", () => select(it.id));
+        g.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(it.id); } });
+      }
+    }
+    svg.classList.toggle("has-sel", !!selected && vis.some(i => i.id === selected));
+    if (!selected) scroller.scrollLeft = scroller.scrollWidth;
+  }
+
+  function hover(node, text) {
+    node.addEventListener("mouseenter", ev => { tip.textContent = text(); tip.hidden = false; move(ev); });
+    node.addEventListener("mousemove", move);
+    node.addEventListener("mouseleave", () => { tip.hidden = true; });
+  }
+  function move(ev) {
+    tip.style.left = Math.min(ev.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top = ev.clientY + 14 + "px";
+  }
+
+  function statusText(it) {
+    if (it.status === "open") {
+      if (it.kind === "pr") return (it.prInfo.draft ? "draft PR → " : "open PR → ") + it.into + (it.stale ? ", idle " + ago(it.idle) : "");
+      if (it.empty) return "pushed " + ago(it.idle) + ", no commits yet";
+      return it.stale ? "open, idle " + ago(it.idle) : "open, not merged";
+    }
+    if (it.status === "closed") return "PR closed without merge";
+    if (it.waiting) return "merged into " + it.into + ", not in " + it.waiting.to + " yet";
+    return "merged into " + it.into + " " + fmtD(it.end);
+  }
+  function chip(it) {
+    if (it.status === "open") return it.empty ? ["empty", "No commits"] : it.stale ? ["stale", "Idle " + it.idle + "d"] : ["open", "Active"];
+    if (it.waiting) return ["wait", "Waiting for " + it.waiting.to];
+    if (it.status === "closed") return ["done", "Closed"];
+    return ["done", "Merged"];
+  }
+
+  // ---------- detail ----------
+  const detail = document.getElementById("detail");
+  function select(id) { selected = selected === id ? null : id; render(); showDetail(); }
+  function commands(it) {
+    const r = DATA.remote, n = it.name;
+    if (it.kind === "pr") return [
+      ["gh pr checkout " + it.pr, "check out the PR locally"],
+      ["gh pr view " + it.pr + " --web", "open it on GitHub"],
+      ["git log --oneline " + r + "/" + it.into + "..HEAD", "its commits, after checkout"],
+    ];
+    if (it.status === "open") return [
+      ["git fetch " + r, "get the latest refs"],
+      ["git log --oneline " + r + "/" + BASE + ".." + r + "/" + n, "commits only on this branch"],
+      ["git diff --stat " + r + "/" + BASE + "..." + r + "/" + n, "files it changes"],
+      ["git switch " + n + " && git merge " + r + "/" + BASE, "bring it up to date with " + BASE],
+      ...(it.empty || it.stale ? [["git push " + r + " --delete " + n, "remove it if it is abandoned"]] : []),
+    ];
+    return [
+      ["git log --oneline -1 " + it.tip, "branch tip"],
+      ["git branch -r --contains " + it.tip, "branches that already have it"],
+    ];
+  }
+  function showDetail() {
+    detail.replaceChildren();
+    const it = items.find(i => i.id === selected);
+    if (!it) { el("div", { class: "full empty-note" }, detail, "Select a branch on the timeline or in the table to see its details and git commands."); return; }
+    const top = el("div", { class: "full" }, detail);
+    el("b", {}, top, it.name);
+    const [c, t] = chip(it); el("span", { class: "chip " + c }, top, t);
+    who(it.lane, top);
+    el("a", { href: it.url, target: "_blank", rel: "noopener" }, top, it.pr ? "Open PR #" + it.pr + " on GitHub" : "Open on GitHub");
+    const kv = (k, v) => { const d = el("div", {}, detail); el("div", { class: "k" }, d, k); el("div", { class: "v" }, d, v); };
+    kv("Started", fmtDT(it.start));
+    kv("Last activity", fmtDT(it.last) + (it.status === "open" ? " (" + ago(it.idle) + ")" : ""));
+    kv("Status", statusText(it));
+    if (it.kind === "branch") {
+      if (it.creator) kv("Pushed by", it.creator);
+      kv("Commits", String(it.commits));
+      kv("Reached", Object.keys(it.inT).filter(t => it.inT[t]).join(", ") || "nothing yet");
+      if (it.status === "open") kv("Behind " + BASE, it.behind + " commits");
+      if (it.prInfo) kv("PR", "#" + it.prInfo.number + " " + it.prInfo.state.toLowerCase() + (it.prInfo.review ? " · " + it.prInfo.review.toLowerCase().replace(/_/g, " ") : ""));
+      if (it.lastCommit) kv("Latest commit", it.lastCommit);
+    } else {
+      kv("PR", "#" + it.pr + " " + it.title + " → " + it.into);
+      kv("Author", it.author);
+      if (it.prInfo.review) kv("Review", it.prInfo.review.toLowerCase().replace(/_/g, " "));
+    }
+    const box = el("div", { class: "cmds" }, detail);
+    const head = el("div", { class: "cmds-head" }, box);
+    el("div", { class: "k" }, head, "Git commands");
+    const btn = el("button", { type: "button", class: "copy" }, head, "Copy");
+    const pre = el("pre", {}, box);
+    const cmds = commands(it);
+    cmds.forEach(([cmd, note], i) => { pre.append(cmd); el("span", { class: "c" }, pre, "   # " + note); if (i < cmds.length - 1) pre.append("\n"); });
+    btn.addEventListener("click", () => {
+      const text = cmds.map(c => c[0]).join("\n");
+      const done = () => { btn.textContent = "Copied"; setTimeout(() => { btn.textContent = "Copy"; }, 1500); };
+      try {
+        navigator.clipboard.writeText(text).then(done, () => selectPre(pre));
+      } catch (e) { selectPre(pre); }
+    });
+  }
+  function selectPre(pre) { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  // ---------- tables ----------
+  function table(tbl, heads, rows) {
+    tbl.replaceChildren();
+    const tr = el("tr", {}, el("thead", {}, tbl));
+    heads.forEach(h => el("th", { class: h.num ? "num" : null }, tr, h.t));
+    const tb = el("tbody", {}, tbl);
+    if (!rows.length) { const r = el("tr", {}, tb); el("td", { colspan: heads.length, class: "empty-note" }, r, "Nothing here."); }
+    return tb;
+  }
+  function rowGo(r, it) {
+    const go = () => { selected = null; select(it.id); scroller.scrollIntoView({ behavior: "smooth", block: "center" }); };
+    r.addEventListener("click", go);
+    r.addEventListener("keydown", ev => { if (ev.key === "Enter") go(); });
+  }
+  function renderTables() {
+    const open = items.filter(i => i.status === "open" && mine(i))
+      .sort((a, b) => (b.stale - a.stale) || (a.empty - b.empty) || (b.idle - a.idle));
+    const otb = table(document.getElementById("openTbl"),
+      [{ t: "Branch" }, { t: "Who" }, { t: "Started" }, { t: "Last activity" }, { t: "Commits", num: 1 }, { t: "Behind " + BASE, num: 1 }, { t: "State" }], open);
+    for (const it of open) {
+      const r = el("tr", { class: "rowlink", tabindex: 0 }, otb);
+      el("td", { class: "mono" }, r, it.name + (it.pr ? " #" + it.pr : ""));
+      who(it.lane, el("td", {}, r));
+      el("td", {}, r, fmtD(it.start));
+      el("td", {}, r, ago(it.idle));
+      el("td", { class: "num" }, r, it.commits != null ? String(it.commits) : "–");
+      el("td", { class: "num" }, r, it.behind != null ? String(it.behind) : "–");
+      const [c, t] = chip(it); el("span", { class: "chip " + c }, el("td", {}, r), t);
+      rowGo(r, it);
+    }
+    const waiting = items.filter(i => i.waiting && mine(i));
+    if (waitFlows.length === 1) document.getElementById("waitTitle").textContent = "In " + waitFlows[0].from + ", not yet in " + waitFlows[0].to;
+    const wtb = table(document.getElementById("waitTbl"), [{ t: "Branch" }, { t: "Who" }, { t: "Merged" }], waiting);
+    for (const it of waiting) {
+      const r = el("tr", { class: "rowlink", tabindex: 0 }, wtb);
+      el("td", { class: "mono" }, r, it.name); who(it.lane, el("td", {}, r)); el("td", {}, r, it.into + " · " + fmtDT(it.end));
+      rowGo(r, it);
+    }
+    const old = (DATA.stale_unmerged || []).filter(mine);
+    document.getElementById("oldSum").textContent = "Old unmerged branches, idle " + C.abandoned_days + "+ days (" + old.length + ")";
+    const oldTb = table(document.getElementById("oldTbl"), [{ t: "Branch" }, { t: "Who" }, { t: "Last activity" }], old);
+    for (const o of old) {
+      const r = el("tr", {}, oldTb);
+      el("td", { class: "mono" }, r, o.name); who(o.lane, el("td", {}, r)); el("td", {}, r, ago(o.age_days));
+    }
+  }
+
+  // ---------- feeds ----------
+  const feed = document.getElementById("feed");
+  const hist = DATA.history || [];
+  if (!hist.length) el("li", { class: "empty-note" }, feed, "No changes recorded yet. Each refresh adds what changed since the last one.");
+  for (const h of hist.slice(0, 40)) {
+    const li = el("li", {}, feed);
+    el("time", {}, li, fmtDT(new Date(h.at)));
+    el("span", {}, li, h.text);
+  }
+  const merges = document.getElementById("merges");
+  const allM = [];
+  for (const [t, info] of Object.entries(DATA.trunks)) for (const e of info.events) if (e.kind === "merge") allM.push({ t, e });
+  allM.sort((a, b) => new Date(b.e.date) - new Date(a.e.date));
+  for (const { t, e } of allM.slice(0, 12)) {
+    const li = el("li", {}, merges);
+    el("time", {}, li, fmtDT(new Date(e.date)));
+    const s = el("span", {}, li);
+    el("b", { class: "mono", style: "color:" + srcColor(e.src) }, s, e.pr ? "PR #" + e.pr + " " + e.src : e.src);
+    s.append(" → " + t);
+  }
+
+  // ---------- controls ----------
+  const rangeBtns = document.querySelectorAll("[data-days]");
+  function renderAll() {
+    rangeBtns.forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.days === rangeDays)));
+    peopleSeg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.p === person)));
+    renderChecks(); renderTables(); render(); showDetail();
+  }
+  rangeBtns.forEach(b => b.addEventListener("click", () => {
+    rangeDays = +b.dataset.days;
+    try { localStorage.setItem("bf-range", String(rangeDays)); } catch (e) {}
+    renderAll();
+  }));
+  document.getElementById("onlyOpen").addEventListener("change", ev => { onlyOpen = ev.target.checked; render(); });
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+  // #branch_name opens the page with that branch selected
+  const fromHash = () => {
+    const name = decodeURIComponent(location.hash.slice(1));
+    const it = name && items.find(i => i.name === name);
+    if (it) { selected = it.id; renderAll(); }
+  };
+  addEventListener("hashchange", fromHash);
+  renderAll(); fromHash();
+})();
+</script>

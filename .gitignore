@@ -1,0 +1,8 @@
+# your own settings and everything generated from your repository
+/config.json
+/data.json
+/history.json
+/index.html
+/changes.txt
+/run.log
+__pycache__/
