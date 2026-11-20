@@ -61,8 +61,17 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class Server(ThreadingHTTPServer):
+    # Windows lets a second socket share a port when SO_REUSEADDR is set, so another
+    # local server on the same port would silently win. Fail loudly instead.
+    allow_reuse_address = sys.platform != "win32"
+
+
 def main():
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        srv = Server(("127.0.0.1", PORT), Handler)
+    except OSError:
+        sys.exit(f"Port {PORT} is already in use. Set another \"port\" in config.json.")
     url = f"http://localhost:{PORT}"
     print(f"Branch Flow on {url}  (Ctrl+C to stop)")
     if "--no-browser" not in sys.argv:
